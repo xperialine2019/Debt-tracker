@@ -6,18 +6,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💳 Учет Долгов</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-in { animation: slideIn 0.3s ease-out; }
+
+```
+    @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); }
+        50% { box-shadow: 0 0 30px rgba(168, 85, 247, 0.6); }
+    }
+    .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+    .glass-effect {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .dark .glass-effect {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .gradient-border {
+        position: relative;
+        background: white;
+    }
+    
+    .gradient-border::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 2px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+    }
+</style>
+```
+
 </head>
-<body>
+<body class="transition-colors duration-300">
     <div id="root"></div>
 
 ```
 <script type="module">
-    import React, { useState } from 'https://esm.sh/react@18';
+    import React, { useState, useEffect } from 'https://esm.sh/react@18';
     import ReactDOM from 'https://esm.sh/react-dom@18/client';
 
     function DebtTracker() {
       const [debts, setDebts] = useState([]);
       const [showForm, setShowForm] = useState(false);
+      const [darkMode, setDarkMode] = useState(false);
+      const [activeStrategy, setActiveStrategy] = useState('snowball');
+      const [monthlyBudget, setMonthlyBudget] = useState('');
+      const [paymentHistory, setPaymentHistory] = useState([]);
       const [newDebt, setNewDebt] = useState({
         name: '',
         amount: '',
@@ -25,6 +73,14 @@
         minPayment: '',
         dueDate: ''
       });
+
+      useEffect(() => {
+        if (darkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }, [darkMode]);
 
       const addDebt = () => {
         if (newDebt.name && newDebt.amount) {
@@ -34,7 +90,8 @@
             amount: parseFloat(newDebt.amount),
             interestRate: parseFloat(newDebt.interestRate) || 0,
             minPayment: parseFloat(newDebt.minPayment) || 0,
-            paid: 0
+            paid: 0,
+            createdAt: new Date().toISOString()
           }]);
           setNewDebt({ name: '', amount: '', interestRate: '', minPayment: '', dueDate: '' });
           setShowForm(false);
@@ -46,84 +103,184 @@
       };
 
       const updatePayment = (id, payment) => {
+        const paymentAmount = parseFloat(payment);
+        const debt = debts.find(d => d.id === id);
+        
         setDebts(debts.map(d => 
-          d.id === id ? { ...d, paid: Math.min(d.paid + parseFloat(payment), d.amount) } : d
+          d.id === id ? { ...d, paid: Math.min(d.paid + paymentAmount, d.amount) } : d
         ));
+        
+        setPaymentHistory([
+          ...paymentHistory,
+          {
+            id: Date.now(),
+            debtName: debt.name,
+            amount: paymentAmount,
+            date: new Date().toISOString()
+          }
+        ]);
       };
 
       const totalDebt = debts.reduce((sum, d) => sum + d.amount, 0);
       const totalPaid = debts.reduce((sum, d) => sum + d.paid, 0);
       const remaining = totalDebt - totalPaid;
+      const totalInterest = debts.reduce((sum, d) => sum + (d.amount * d.interestRate / 100), 0);
 
       const getPayoffStrategies = () => {
         const sortedDebts = [...debts].filter(d => d.paid < d.amount);
         
         return {
-          snowball: [...sortedDebts].sort((a, b) => (a.amount - a.paid) - (b.amount - b.paid)),
-          avalanche: [...sortedDebts].sort((a, b) => b.interestRate - a.interestRate),
-          highestFirst: [...sortedDebts].sort((a, b) => (b.amount - b.paid) - (a.amount - a.paid))
+          snowball: {
+            name: '❄️ Снежный ком',
+            description: 'Самые маленькие долги первыми',
+            debts: [...sortedDebts].sort((a, b) => (a.amount - a.paid) - (b.amount - b.paid)),
+            color: 'from-blue-500 to-cyan-500'
+          },
+          avalanche: {
+            name: '🔥 Лавина',
+            description: 'Высокие проценты первыми',
+            debts: [...sortedDebts].sort((a, b) => b.interestRate - a.interestRate),
+            color: 'from-orange-500 to-red-500'
+          },
+          highestFirst: {
+            name: '💪 Самый большой',
+            description: 'Крупные долги первыми',
+            debts: [...sortedDebts].sort((a, b) => (b.amount - b.paid) - (a.amount - a.paid)),
+            color: 'from-purple-500 to-pink-500'
+          },
+          balanced: {
+            name: '⚖️ Сбалансированный',
+            description: 'Оптимальное сочетание',
+            debts: [...sortedDebts].sort((a, b) => {
+              const scoreA = (a.interestRate * 0.5) + ((a.amount - a.paid) / 1000 * 0.3) + (a.minPayment * 0.2);
+              const scoreB = (b.interestRate * 0.5) + ((b.amount - b.paid) / 1000 * 0.3) + (b.minPayment * 0.2);
+              return scoreB - scoreA;
+            }),
+            color: 'from-green-500 to-emerald-500'
+          },
+          deadline: {
+            name: '⏰ По срокам',
+            description: 'Ближайшие сроки первыми',
+            debts: [...sortedDebts].sort((a, b) => {
+              if (!a.dueDate) return 1;
+              if (!b.dueDate) return -1;
+              return new Date(a.dueDate) - new Date(b.dueDate);
+            }),
+            color: 'from-yellow-500 to-orange-500'
+          }
         };
       };
 
       const strategies = getPayoffStrategies();
 
-      return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6" },
-        React.createElement('div', { className: "max-w-6xl mx-auto" },
-          React.createElement('div', { className: "text-center mb-8" },
-            React.createElement('h1', { className: "text-4xl font-bold text-gray-800 mb-2" }, '💳 Учет Долгов'),
-            React.createElement('p', { className: "text-gray-600" }, 'Управляйте долгами и планируйте выход из них')
+      const calculatePayoffTime = () => {
+        if (!monthlyBudget || remaining === 0) return null;
+        const budget = parseFloat(monthlyBudget);
+        const monthlyInterest = totalInterest / 12;
+        const effectivePayment = budget - monthlyInterest;
+        
+        if (effectivePayment <= 0) return { months: 999, message: 'Бюджет слишком мал' };
+        
+        const months = Math.ceil(remaining / effectivePayment);
+        return { months, message: `${months} месяцев` };
+      };
+
+      const payoffTime = calculatePayoffTime();
+
+      const stats = {
+        totalDebts: debts.length,
+        activeDebts: debts.filter(d => d.paid < d.amount).length,
+        paidOffDebts: debts.filter(d => d.paid >= d.amount).length,
+        avgInterest: debts.length > 0 ? (debts.reduce((sum, d) => sum + d.interestRate, 0) / debts.length).toFixed(1) : 0,
+        totalPayments: paymentHistory.reduce((sum, p) => sum + p.amount, 0)
+      };
+
+      return React.createElement('div', { 
+        className: `min-h-screen transition-all duration-500 ${darkMode ? 'bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900' : 'bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50'} p-4 md:p-6` 
+      },
+        React.createElement('div', { className: "max-w-7xl mx-auto" },
+          // Header with Theme Toggle
+          React.createElement('div', { className: "flex justify-between items-center mb-8 animate-slide-in" },
+            React.createElement('div', { className: "text-center flex-1" },
+              React.createElement('h1', { className: `text-4xl md:text-5xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}` }, 
+                '💳 Учет Долгов'
+              ),
+              React.createElement('p', { className: `${darkMode ? 'text-gray-300' : 'text-gray-600'}` }, 
+                'Управляйте долгами и планируйте выход из них'
+              )
+            ),
+            React.createElement('button', {
+              onClick: () => setDarkMode(!darkMode),
+              className: `p-3 rounded-xl ${darkMode ? 'bg-yellow-400 text-gray-900' : 'bg-gray-800 text-white'} hover:scale-110 transition-transform`
+            }, darkMode ? '☀️' : '🌙')
           ),
 
+          // Stats Dashboard
+          React.createElement('div', { className: "grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-8" },
+            [
+              { label: 'Всего долгов', value: stats.totalDebts, icon: '📊', color: 'blue' },
+              { label: 'Активных', value: stats.activeDebts, icon: '⚡', color: 'yellow' },
+              { label: 'Погашено', value: stats.paidOffDebts, icon: '✅', color: 'green' },
+              { label: 'Средний %', value: stats.avgInterest + '%', icon: '📈', color: 'red' },
+              { label: 'Выплачено', value: stats.totalPayments.toLocaleString('ru-RU') + ' ₽', icon: '💰', color: 'purple' }
+            ].map((stat, i) =>
+              React.createElement('div', { 
+                key: i,
+                className: `glass-effect rounded-2xl p-4 animate-slide-in ${darkMode ? 'text-white' : 'text-gray-800'}`,
+                style: { animationDelay: `${i * 0.1}s` }
+              },
+                React.createElement('div', { className: "text-2xl mb-2" }, stat.icon),
+                React.createElement('div', { className: "text-xl md:text-2xl font-bold" }, stat.value),
+                React.createElement('div', { className: `text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}` }, stat.label)
+              )
+            )
+          ),
+
+          // Main Summary Cards
           React.createElement('div', { className: "grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" },
-            React.createElement('div', { className: "bg-white rounded-2xl p-6 shadow-lg border-2 border-red-100" },
-              React.createElement('div', { className: "flex items-center justify-between mb-2" },
-                React.createElement('span', { className: "text-gray-600 text-sm font-medium" }, 'Общий долг'),
-                React.createElement('span', { className: "text-2xl" }, '💰')
-              ),
-              React.createElement('div', { className: "text-3xl font-bold text-red-600" },
-                totalDebt.toLocaleString('ru-RU') + ' ₽'
-              )
-            ),
-
-            React.createElement('div', { className: "bg-white rounded-2xl p-6 shadow-lg border-2 border-green-100" },
-              React.createElement('div', { className: "flex items-center justify-between mb-2" },
-                React.createElement('span', { className: "text-gray-600 text-sm font-medium" }, 'Выплачено'),
-                React.createElement('span', { className: "text-2xl" }, '✅')
-              ),
-              React.createElement('div', { className: "text-3xl font-bold text-green-600" },
-                totalPaid.toLocaleString('ru-RU') + ' ₽'
-              )
-            ),
-
-            React.createElement('div', { className: "bg-white rounded-2xl p-6 shadow-lg border-2 border-orange-100" },
-              React.createElement('div', { className: "flex items-center justify-between mb-2" },
-                React.createElement('span', { className: "text-gray-600 text-sm font-medium" }, 'Осталось'),
-                React.createElement('span', { className: "text-2xl" }, '🎯')
-              ),
-              React.createElement('div', { className: "text-3xl font-bold text-orange-600" },
-                remaining.toLocaleString('ru-RU') + ' ₽'
+            [
+              { label: 'Общий долг', value: totalDebt, icon: '💰', gradient: 'from-red-500 to-pink-500' },
+              { label: 'Выплачено', value: totalPaid, icon: '✅', gradient: 'from-green-500 to-emerald-500' },
+              { label: 'Осталось', value: remaining, icon: '🎯', gradient: 'from-orange-500 to-yellow-500' }
+            ].map((card, i) =>
+              React.createElement('div', { 
+                key: i,
+                className: `bg-gradient-to-r ${card.gradient} rounded-2xl p-6 shadow-2xl transform hover:scale-105 transition-all animate-slide-in`,
+                style: { animationDelay: `${i * 0.15}s` }
+              },
+                React.createElement('div', { className: "flex items-center justify-between mb-2" },
+                  React.createElement('span', { className: "text-white text-sm font-medium opacity-90" }, card.label),
+                  React.createElement('span', { className: "text-3xl" }, card.icon)
+                ),
+                React.createElement('div', { className: "text-3xl md:text-4xl font-bold text-white" },
+                  card.value.toLocaleString('ru-RU') + ' ₽'
+                )
               )
             )
           ),
 
           React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-3 gap-6" },
-            React.createElement('div', { className: "lg:col-span-2" },
-              React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-6 mb-6" },
+            // Left Column - Debts List
+            React.createElement('div', { className: "lg:col-span-2 space-y-6" },
+              // Debts Section
+              React.createElement('div', { className: `${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6` },
                 React.createElement('div', { className: "flex justify-between items-center mb-6" },
-                  React.createElement('h2', { className: "text-2xl font-bold text-gray-800" }, 'Мои Долги'),
+                  React.createElement('h2', { className: `text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}` }, 
+                    '📋 Мои Долги'
+                  ),
                   React.createElement('button', {
                     onClick: () => setShowForm(!showForm),
-                    className: "bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-xl hover:shadow-lg transition-all"
-                  }, '➕ Добавить долг')
+                    className: "bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:shadow-lg transform hover:scale-105 transition-all pulse-glow"
+                  }, '➕ Добавить')
                 ),
 
-                showForm && React.createElement('div', { className: "bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl mb-6 border-2 border-purple-200" },
+                showForm && React.createElement('div', { className: `${darkMode ? 'bg-gray-700' : 'bg-gradient-to-r from-purple-50 to-pink-50'} p-6 rounded-xl mb-6 border-2 ${darkMode ? 'border-purple-500' : 'border-purple-200'} animate-slide-in` },
                   React.createElement('input', {
                     type: "text",
                     placeholder: "Название (например, Кредит в банке)",
                     value: newDebt.name,
                     onChange: (e) => setNewDebt({...newDebt, name: e.target.value}),
-                    className: "w-full p-3 mb-3 border-2 border-purple-200 rounded-lg focus:outline-none focus:border-purple-400"
+                    className: `w-full p-3 mb-3 border-2 ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-purple-200'} rounded-lg focus:outline-none focus:border-purple-400`
                   }),
                   React.createElement('div', { className: "grid grid-cols-2 gap-3" },
                     React.createElement('input', {
@@ -131,79 +288,93 @@
                       placeholder: "Сумма долга (₽)",
                       value: newDebt.amount,
                       onChange: (e) => setNewDebt({...newDebt, amount: e.target.value}),
-                      className: "p-3 border-2 border-purple-200 rounded-lg focus:outline-none focus:border-purple-400"
+                      className: `p-3 border-2 ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-purple-200'} rounded-lg focus:outline-none focus:border-purple-400`
                     }),
                     React.createElement('input', {
                       type: "number",
                       placeholder: "Процент (%)",
                       value: newDebt.interestRate,
                       onChange: (e) => setNewDebt({...newDebt, interestRate: e.target.value}),
-                      className: "p-3 border-2 border-purple-200 rounded-lg focus:outline-none focus:border-purple-400"
+                      className: `p-3 border-2 ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-purple-200'} rounded-lg focus:outline-none focus:border-purple-400`
                     }),
                     React.createElement('input', {
                       type: "number",
                       placeholder: "Мин. платеж (₽)",
                       value: newDebt.minPayment,
                       onChange: (e) => setNewDebt({...newDebt, minPayment: e.target.value}),
-                      className: "p-3 border-2 border-purple-200 rounded-lg focus:outline-none focus:border-purple-400"
+                      className: `p-3 border-2 ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-purple-200'} rounded-lg focus:outline-none focus:border-purple-400`
                     }),
                     React.createElement('input', {
                       type: "date",
                       value: newDebt.dueDate,
                       onChange: (e) => setNewDebt({...newDebt, dueDate: e.target.value}),
-                      className: "p-3 border-2 border-purple-200 rounded-lg focus:outline-none focus:border-purple-400"
+                      className: `p-3 border-2 ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-purple-200'} rounded-lg focus:outline-none focus:border-purple-400`
                     })
                   ),
                   React.createElement('button', {
                     onClick: addDebt,
-                    className: "w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg mt-3 font-semibold hover:shadow-lg transition-all"
-                  }, 'Сохранить')
+                    className: "w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg mt-3 font-semibold hover:shadow-lg transform hover:scale-105 transition-all"
+                  }, '💾 Сохранить')
                 ),
 
                 React.createElement('div', { className: "space-y-4" },
                   debts.map(debt => {
                     const progress = (debt.paid / debt.amount) * 100;
                     const remaining = debt.amount - debt.paid;
+                    const isCompleted = debt.paid >= debt.amount;
                     
-                    return React.createElement('div', { key: debt.id, className: "border-2 border-gray-100 rounded-xl p-5 hover:shadow-lg transition-all bg-gradient-to-r from-white to-gray-50" },
+                    return React.createElement('div', { 
+                      key: debt.id, 
+                      className: `border-2 ${darkMode ? 'border-gray-600 bg-gray-700' : 'border-gray-100 bg-gradient-to-r from-white to-gray-50'} rounded-xl p-5 hover:shadow-2xl transition-all transform hover:scale-102 ${isCompleted ? 'opacity-60' : ''}`
+                    },
                       React.createElement('div', { className: "flex justify-between items-start mb-3" },
                         React.createElement('div', null,
-                          React.createElement('h3', { className: "font-bold text-lg text-gray-800" }, debt.name),
-                          React.createElement('div', { className: "flex gap-4 text-sm text-gray-600 mt-1" },
-                            debt.interestRate > 0 && React.createElement('span', { className: "bg-red-100 text-red-700 px-2 py-1 rounded-full" },
-                              debt.interestRate + '% годовых'
+                          React.createElement('h3', { className: `font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-800'} ${isCompleted ? 'line-through' : ''}` }, 
+                            debt.name,
+                            isCompleted && ' ✅'
+                          ),
+                          React.createElement('div', { className: "flex flex-wrap gap-2 text-sm mt-2" },
+                            debt.interestRate > 0 && React.createElement('span', { className: "bg-red-100 text-red-700 px-3 py-1 rounded-full font-medium" },
+                              '📊 ' + debt.interestRate + '% годовых'
                             ),
-                            debt.minPayment > 0 && React.createElement('span', { className: "bg-blue-100 text-blue-700 px-2 py-1 rounded-full" },
-                              'Мин: ' + debt.minPayment + ' ₽'
+                            debt.minPayment > 0 && React.createElement('span', { className: "bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium" },
+                              '💵 Мин: ' + debt.minPayment + ' ₽'
+                            ),
+                            debt.dueDate && React.createElement('span', { className: "bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full font-medium" },
+                              '📅 ' + new Date(debt.dueDate).toLocaleDateString('ru-RU')
                             )
                           )
                         ),
                         React.createElement('button', {
                           onClick: () => deleteDebt(debt.id),
-                          className: "text-red-500 hover:bg-red-50 p-2 rounded-lg transition-all"
+                          className: "text-red-500 hover:bg-red-50 p-2 rounded-lg transition-all transform hover:scale-110"
                         }, '🗑️')
                       ),
 
                       React.createElement('div', { className: "mb-3" },
-                        React.createElement('div', { className: "flex justify-between text-sm mb-2" },
-                          React.createElement('span', { className: "text-gray-600" }, 'Выплачено: ' + debt.paid.toLocaleString('ru-RU') + ' ₽'),
-                          React.createElement('span', { className: "font-semibold text-gray-800" }, 'Осталось: ' + remaining.toLocaleString('ru-RU') + ' ₽')
+                        React.createElement('div', { className: `flex justify-between text-sm mb-2 ${darkMode ? 'text-gray-300' : ''}` },
+                          React.createElement('span', null, '✅ Выплачено: ' + debt.paid.toLocaleString('ru-RU') + ' ₽'),
+                          React.createElement('span', { className: "font-semibold" }, '⏳ Осталось: ' + remaining.toLocaleString('ru-RU') + ' ₽')
                         ),
-                        React.createElement('div', { className: "w-full bg-gray-200 rounded-full h-3 overflow-hidden" },
+                        React.createElement('div', { className: `w-full ${darkMode ? 'bg-gray-600' : 'bg-gray-200'} rounded-full h-4 overflow-hidden shadow-inner` },
                           React.createElement('div', {
-                            className: "bg-gradient-to-r from-green-400 to-emerald-500 h-3 rounded-full transition-all duration-500",
+                            className: "bg-gradient-to-r from-green-400 via-emerald-500 to-green-600 h-4 rounded-full transition-all duration-500 relative",
                             style: { width: progress + '%' }
-                          })
+                          },
+                            React.createElement('div', { className: "absolute inset-0 bg-white opacity-20 animate-pulse" })
+                          )
                         ),
-                        React.createElement('div', { className: "text-right text-xs text-gray-500 mt-1" }, progress.toFixed(1) + '%')
+                        React.createElement('div', { className: `text-right text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-1 font-semibold` }, 
+                          progress.toFixed(1) + '%'
+                        )
                       ),
 
-                      remaining > 0 && React.createElement('div', { className: "flex gap-2" },
+                      !isCompleted && React.createElement('div', { className: "flex gap-2" },
                         React.createElement('input', {
                           type: "number",
                           placeholder: "Сумма платежа",
                           id: 'payment-' + debt.id,
-                          className: "flex-1 p-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-purple-400",
+                          className: `flex-1 p-3 border-2 ${darkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-200'} rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-200`,
                           onKeyPress: (e) => {
                             if (e.key === 'Enter' && e.target.value) {
                               updatePayment(debt.id, e.target.value);
@@ -219,68 +390,157 @@
                               input.value = '';
                             }
                           },
-                          className: "bg-gradient-to-r from-green-500 to-emerald-500 text-white px-6 py-2 rounded-lg hover:shadow-lg transition-all font-semibold"
-                        }, 'Оплатить')
+                          className: "bg-gradient-to-r from-green-500 to-emerald-500 text-white px-6 py-3 rounded-lg hover:shadow-lg transform hover:scale-105 transition-all font-semibold"
+                        }, '💳 Оплатить')
                       )
                     );
                   }),
 
-                  debts.length === 0 && React.createElement('div', { className: "text-center py-12 text-gray-400" },
-                    React.createElement('p', { className: "text-6xl mb-4" }, '💳'),
-                    React.createElement('p', { className: "text-lg" }, 'Нет добавленных долгов'),
+                  debts.length === 0 && React.createElement('div', { className: `text-center py-16 ${darkMode ? 'text-gray-400' : 'text-gray-400'}` },
+                    React.createElement('p', { className: "text-6xl mb-4 animate-bounce" }, '💳'),
+                    React.createElement('p', { className: "text-xl font-semibold mb-2" }, 'Нет добавленных долгов'),
                     React.createElement('p', { className: "text-sm" }, 'Начните с добавления первого долга')
+                  )
+                )
+              ),
+
+              // Payment History
+              paymentHistory.length > 0 && React.createElement('div', { className: `${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6` },
+                React.createElement('h2', { className: `text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} mb-4` }, 
+                  '📜 История платежей'
+                ),
+                React.createElement('div', { className: "space-y-2 max-h-96 overflow-y-auto" },
+                  [...paymentHistory].reverse().slice(0, 10).map(payment =>
+                    React.createElement('div', { 
+                      key: payment.id,
+                      className: `${darkMode ? 'bg-gray-700' : 'bg-gray-50'} p-3 rounded-lg flex justify-between items-center`
+                    },
+                      React.createElement('div', null,
+                        React.createElement('div', { className: `font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}` }, payment.debtName),
+                        React.createElement('div', { className: `text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}` }, 
+                          new Date(payment.date).toLocaleString('ru-RU')
+                        )
+                      ),
+                      React.createElement('div', { className: "text-green-600 font-bold" }, 
+                        '+' + payment.amount.toLocaleString('ru-RU') + ' ₽'
+                      )
+                    )
                   )
                 )
               )
             ),
 
-            React.createElement('div', { className: "lg:col-span-1" },
-              React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-6 sticky top-6" },
-                React.createElement('h2', { className: "text-2xl font-bold text-gray-800 mb-4" }, '🎯 Стратегии выплаты'),
+            // Right Column - Strategies & Tools
+            React.createElement('div', { className: "lg:col-span-1 space-y-6" },
+              // Monthly Budget Calculator
+              React.createElement('div', { className: `${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6` },
+                React.createElement('h2', { className: `text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} mb-4` }, 
+                  '📊 Калькулятор'
+                ),
+                React.createElement('input', {
+                  type: "number",
+                  placeholder: "Месячный бюджет на долги (₽)",
+                  value: monthlyBudget,
+                  onChange: (e) => setMonthlyBudget(e.target.value),
+                  className: `w-full p-3 border-2 ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-purple-200'} rounded-lg focus:outline-none focus:border-purple-400 mb-4`
+                }),
+                payoffTime && React.createElement('div', { className: `bg-gradient-to-r from-purple-100 to-pink-100 ${darkMode ? 'from-purple-900 to-pink-900' : ''} p-4 rounded-lg` },
+                  React.createElement('div', { className: `text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-1` }, 'Срок погашения:'),
+                  React.createElement('div', { className: `text-2xl font-bold ${darkMode ? 'text-white' : 'text-purple-700'}` }, 
+                    payoffTime.message
+                  ),
+                  React.createElement('div', { className: `text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'} mt-2` }, 
+                    'При текущей процентной нагрузке'
+                  )
+                )
+              ),
 
-                React.createElement('div', { className: "space-y-4" },
-                  React.createElement('div', { className: "bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border-2 border-blue-200" },
-                    React.createElement('h3', { className: "font-bold text-blue-800 mb-2" }, '❄️ Снежный ком'),
-                    React.createElement('p', { className: "text-sm text-gray-600 mb-3" }, 'Сначала гасите самые маленькие долги для мотивации'),
-                    React.createElement('ol', { className: "space-y-1 text-sm" },
-                      strategies.snowball.slice(0, 3).map((d, i) =>
-                        React.createElement('li', { key: d.id, className: "text-gray-700" },
-                          (i + 1) + '. ' + d.name + ' (' + (d.amount - d.paid).toLocaleString('ru-RU') + ' ₽)'
+              // Strategies
+              React.createElement('div', { className: `${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6` },
+                React.createElement('h2', { className: `text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} mb-4` }, 
+                  '🎯 Стратегии выплаты'
+                ),
+
+                React.createElement('div', { className: "space-y-3" },
+                  Object.entries(strategies).map(([key, strategy]) =>
+                    React.createElement('div', { 
+                      key: key,
+                      onClick: () => setActiveStrategy(key),
+                      className: `cursor-pointer transition-all transform hover:scale-105 ${
+                        activeStrategy === key 
+                          ? `bg-gradient-to-r ${strategy.color} text-white shadow-2xl` 
+                          : `${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-50 hover:bg-gray-100'}`
+                      } p-4 rounded-xl border-2 ${
+                        activeStrategy === key ? 'border-transparent' : darkMode ? 'border-gray-600' : 'border-gray-200'
+                      }`
+                    },
+                      React.createElement('div', { className: "flex justify-between items-start mb-2" },
+                        React.createElement('h3', { className: `font-bold ${activeStrategy === key ? 'text-white' : darkMode ? 'text-white' : 'text-gray-800'}` }, 
+                          strategy.name
+                        ),
+                        activeStrategy === key && React.createElement('span', { className: "text-xl" }, '✓')
+                      ),
+                      React.createElement('p', { className: `text-sm mb-3 ${activeStrategy === key ? 'text-white opacity-90' : darkMode ? 'text-gray-400' : 'text-gray-600'}` }, 
+                        strategy.description
+                      ),
+                      strategy.debts.length > 0 && React.createElement('ol', { className: "space-y-1 text-sm" },
+                        strategy.debts.slice(0, 3).map((d, i) =>
+                          React.createElement('li', { 
+                            key: d.id, 
+                            className: activeStrategy === key ? 'text-white' : darkMode ? 'text-gray-300' : 'text-gray-700'
+                          },
+                            (i + 1) + '. ' + d.name + ' (' + (d.amount - d.paid).toLocaleString('ru-RU') + ' ₽)'
+                          )
                         )
                       )
-                    )
-                  ),
-
-                  React.createElement('div', { className: "bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-xl border-2 border-orange-200" },
-                    React.createElement('h3', { className: "font-bold text-orange-800 mb-2" }, '🔥 Лавина'),
-                    React.createElement('p', { className: "text-sm text-gray-600 mb-3" }, 'Сначала гасите долги с высокими процентами'),
-                    React.createElement('ol', { className: "space-y-1 text-sm" },
-                      strategies.avalanche.slice(0, 3).map((d, i) =>
-                        React.createElement('li', { key: d.id, className: "text-gray-700" },
-                          (i + 1) + '. ' + d.name + ' (' + d.interestRate + '%)'
-                        )
-                      )
-                    )
-                  ),
-
-                  React.createElement('div', { className: "bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-xl border-2 border-purple-200" },
-                    React.createElement('h3', { className: "font-bold text-purple-800 mb-2" }, '💪 Самый большой'),
-                    React.createElement('p', { className: "text-sm text-gray-600 mb-3" }, 'Сначала гасите самые крупные долги'),
-                    React.createElement('ol', { className: "space-y-1 text-sm" },
-                      strategies.highestFirst.slice(0, 3).map((d, i) =>
-                        React.createElement('li', { key: d.id, className: "text-gray-700" },
-                          (i + 1) + '. ' + d.name + ' (' + (d.amount - d.paid).toLocaleString('ru-RU') + ' ₽)'
-                        )
-                      )
-                    )
-                  ),
-
-                  React.createElement('div', { className: "bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border-2 border-green-200 mt-4" },
-                    React.createElement('h3', { className: "font-bold text-green-800 mb-2" }, '💡 Совет'),
-                    React.createElement('p', { className: "text-sm text-gray-700" },
-                      'Выберите стратегию и придерживайтесь её. Платите больше минимума, когда возможно. Избегайте новых долгов!'
                     )
                   )
+                )
+              ),
+
+              // Tips
+              React.createElement('div', { className: `bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-2xl p-6 text-white` },
+                React.createElement('h3', { className: "font-bold text-xl mb-3 flex items-center gap-2" }, 
+                  '💡',
+                  'Советы экспертов'
+                ),
+                React.createElement('ul', { className: "space-y-2 text-sm" },
+                  [
+                    'Платите больше минимума когда возможно',
+                    'Избегайте новых долгов во время погашения',
+                    'Пересматривайте бюджет каждый месяц',
+                    'Празднуйте каждый погашенный долг',
+                    'Создайте резервный фонд на 3-6 месяцев'
+                  ].map((tip, i) =>
+                    React.createElement('li', { key: i, className: "flex items-start gap-2" },
+                      React.createElement('span', null, '✓'),
+                      React.createElement('span', null, tip)
+                    )
+                  )
+                )
+              ),
+
+              // Progress Chart
+              debts.length > 0 && React.createElement('div', { className: `${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-2xl p-6` },
+                React.createElement('h3', { className: `font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-800'} mb-4` }, 
+                  '📈 Прогресс'
+                ),
+                React.createElement('div', { className: "space-y-3" },
+                  debts.map(debt => {
+                    const progress = (debt.paid / debt.amount) * 100;
+                    return React.createElement('div', { key: debt.id },
+                      React.createElement('div', { className: `flex justify-between text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}` },
+                        React.createElement('span', null, debt.name),
+                        React.createElement('span', { className: "font-bold" }, progress.toFixed(0) + '%')
+                      ),
+                      React.createElement('div', { className: `h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full overflow-hidden` },
+                        React.createElement('div', {
+                          className: `h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500`,
+                          style: { width: progress + '%' }
+                        })
+                      )
+                    );
+                  })
                 )
               )
             )
