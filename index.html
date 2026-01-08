@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -14,7 +13,6 @@
         }
         .animate-slide-in { animation: slideIn 0.3s ease-out; }
 
-```
     @keyframes pulse-glow {
         0%, 100% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); }
         50% { box-shadow: 0 0 30px rgba(168, 85, 247, 0.6); }
@@ -83,32 +81,69 @@
         dueDate: ''
       });
 
+      // Загрузка данных из Telegram Cloud Storage или памяти
       useEffect(() => {
         if (isTelegram && tg.CloudStorage) {
           tg.CloudStorage.getItems(['debts', 'paymentHistory', 'monthlyBudget', 'activeStrategy'], (error, result) => {
             if (!error && result) {
-              if (result.debts) setDebts(JSON.parse(result.debts));
-              if (result.paymentHistory) setPaymentHistory(JSON.parse(result.paymentHistory));
-              if (result.monthlyBudget) setMonthlyBudget(result.monthlyBudget);
-              if (result.activeStrategy) setActiveStrategy(result.activeStrategy);
+              try {
+                if (result.debts) setDebts(JSON.parse(result.debts));
+                if (result.paymentHistory) setPaymentHistory(JSON.parse(result.paymentHistory));
+                if (result.monthlyBudget) setMonthlyBudget(result.monthlyBudget);
+                if (result.activeStrategy) setActiveStrategy(result.activeStrategy);
+              } catch (e) {
+                console.error('Error parsing data:', e);
+              }
             }
             setLoading(false);
           });
         } else {
+          // Загрузка из памяти для браузера
+          try {
+            if (window.debtsData) setDebts(window.debtsData);
+            if (window.historyData) setPaymentHistory(window.historyData);
+            if (window.budgetData) setMonthlyBudget(window.budgetData);
+            if (window.strategyData) setActiveStrategy(window.strategyData);
+          } catch (e) {
+            console.error('Error loading from memory:', e);
+          }
           setLoading(false);
         }
       }, []);
 
-      useEffect(() => {
+      // Сохранение данных
+      const saveData = () => {
         if (loading) return;
 
         if (isTelegram && tg.CloudStorage) {
-          tg.CloudStorage.setItem('debts', JSON.stringify(debts));
-          tg.CloudStorage.setItem('paymentHistory', JSON.stringify(paymentHistory));
-          tg.CloudStorage.setItem('monthlyBudget', monthlyBudget);
-          tg.CloudStorage.setItem('activeStrategy', activeStrategy);
+          tg.CloudStorage.setItem('debts', JSON.stringify(debts), (error) => {
+            if (error) console.error('Error saving debts:', error);
+          });
+          tg.CloudStorage.setItem('paymentHistory', JSON.stringify(paymentHistory), (error) => {
+            if (error) console.error('Error saving history:', error);
+          });
+          tg.CloudStorage.setItem('monthlyBudget', monthlyBudget, (error) => {
+            if (error) console.error('Error saving budget:', error);
+          });
+          tg.CloudStorage.setItem('activeStrategy', activeStrategy, (error) => {
+            if (error) console.error('Error saving strategy:', error);
+          });
+        } else {
+          // Fallback для браузера - используем переменные в памяти
+          try {
+            window.debtsData = debts;
+            window.historyData = paymentHistory;
+            window.budgetData = monthlyBudget;
+            window.strategyData = activeStrategy;
+          } catch (e) {
+            console.error('Error saving to memory:', e);
+          }
         }
-      }, [debts, paymentHistory, monthlyBudget, activeStrategy, loading]);
+      };
+
+      useEffect(() => {
+        saveData();
+      }, [debts, paymentHistory, monthlyBudget, activeStrategy]);
 
       useEffect(() => {
         if (isTelegram) {
@@ -491,7 +526,5 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(DebtTracker));
 </script>
-```
-
 </body>
 </html>
